@@ -1,0 +1,15 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+myagents/coverletter_fixed.py
+myagents/coverletter_robust.py
+myagents/coverletter_simple.py
+myagents/debug_token.py
+.env
