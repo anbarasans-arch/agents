@@ -1,7 +1,74 @@
 [project]
 name = "agents"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI-powered agents collection including cover letter generator, fraud detection, and more"
 readme = "README.md"
-requires-python = ">=3.13"
-dependencies = []
+requires-python = ">=3.9"
+dependencies = [
+    # Core AI/ML libraries
+    "langchain>=0.1.0",
+    "langchain-community>=0.0.20",
+    "langchain-huggingface>=0.0.1",
+    "langchain-chroma>=0.1.0",
+    "huggingface-hub>=0.20.0",
+    "transformers>=4.35.0",
+    
+    # Vector database
+    "chromadb>=0.4.0",
+    
+    # Document processing
+    "pypdf>=3.0.0",
+    "python-docx>=1.0.0",
+    "docx2txt>=0.8",
+    "lxml>=4.9.0",
+    
+    # Web scraping
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.0",
+    
+    # Web UI
+    "streamlit>=1.30.0",
+    
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    
+    # Optional: Additional ML libraries
+    "torch>=2.0.0",
+    "sentence-transformers>=2.2.0",
+]
+
+[project.optional-dependencies]
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+]
+
+# Jupyter notebook dependencies
+jupyter = [
+    "jupyter>=1.0.0",
+    "ipykernel>=6.0.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/anbarasans-arch/agents"
+Repository = "https://github.com/anbarasans-arch/agents"
+Issues = "https://github.com/anbarasans-arch/agents/issues"
+
+[project.scripts]
+# Command-line entry points for your agents
+cover-letter-agent = "myagents.tailored_coverletter_agent:main_cover_letter_agent"
+cover-letter-ui = "myagents.tailored_coverletter_agent_ui:main_streamlit_app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
