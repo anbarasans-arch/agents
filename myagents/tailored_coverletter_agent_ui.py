@@ -14,41 +14,37 @@ import re
 import streamlit as st
 import tempfile
 import time
-# Document processing libraries
+
+# Document processing - might need to install these
 try:
     from docx import Document
-    DOCX_AVAILABLE = True
+    DOCX_OK = True
 except ImportError:
-    st.warning("⚠️ python-docx not installed. DOCX support will be limited.")
-    DOCX_AVAILABLE = False
+    DOCX_OK = False
 
 try:
     import docx2txt
-    DOCX2TXT_AVAILABLE = True
+    DOCX2TXT_OK = True
 except ImportError:
-    st.warning("⚠️ docx2txt not installed. Alternative DOCX processing will be limited.")
-    DOCX2TXT_AVAILABLE = False
+    DOCX2TXT_OK = False
 
-# Suppress specific warnings
+# Suppress warnings
 warnings.filterwarnings("ignore", message="USER_AGENT environment variable not set")
 
 load_dotenv()
 
-# Set USER_AGENT environment variable to avoid warnings
-os.environ.setdefault('USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+# Set user agent to avoid bot detection
+os.environ.setdefault('USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
 
-# Streamlit page configuration
 st.set_page_config(
-    page_title="AI Cover Letter Generator",
+    page_title="Cover Letter Generator",
     page_icon="📝",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# Initialize LLM and other components only once using Streamlit session state
+# Initialize LLM
 @st.cache_resource
-def initialize_llm():
-    """Initialize LLM with caching"""
+def get_llm():
     llm = HuggingFaceEndpoint(
         repo_id="meta-llama/Llama-3.2-3B-Instruct",
         task="text-generation",
@@ -60,25 +56,23 @@ def initialize_llm():
     return ChatHuggingFace(llm=llm, verbose=False)
 
 @st.cache_resource
-def initialize_embeddings():
-    """Initialize embeddings with caching"""
+def get_embeddings():
     return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
 @st.cache_resource
-def initialize_chromadb():
-    """Initialize ChromaDB connection with caching"""
+def get_db():
     try:
-        chroma_client = chromadb.HttpClient(host="localhost", port=8000)
-        chroma_client.heartbeat()
+        client = chromadb.HttpClient(host="localhost", port=8000)
+        client.heartbeat()
         
-        embedding_function = initialize_embeddings()
-        vector_store = Chroma(
-            client=chroma_client,
+        embeddings = get_embeddings()
+        store = Chroma(
+            client=client,
             collection_name="embd_store_cover_letter",
-            embedding_function=embedding_function
+            embedding_function=embeddings
         )
-        return chroma_client, vector_store, True
-    except Exception as e:
+        return client, store, True
+    except Exception:
         return None, None, False
 
 # Initialize components
@@ -87,7 +81,7 @@ store_prompt_template = PromptTemplate(
     template="Store this information: {text}"
 )
 
-def extract_text_from_pdf(file_path):
+def read_pdf(file_path):
     """Extract text from PDF file"""
     try:
         loader = PyPDFLoader(file_path)
@@ -95,42 +89,32 @@ def extract_text_from_pdf(file_path):
         extracted_text = "\n".join(doc.page_content for doc in docs)
         return extracted_text
     except Exception as e:
-        st.error(f"❌ Error extracting text from PDF: {str(e)}")
+        st.error(f"Error extracting text from PDF: {str(e)}")
         return None
 
-def extract_text_from_docx(file_path):
-    """Extract text from DOCX file"""
-    try:
-        extracted_text = ""
-        
-        # Method 1: Using python-docx
-        if DOCX_AVAILABLE:
-            try:
-                doc = Document(file_path)
-                text_content = []
-                for paragraph in doc.paragraphs:
-                    text_content.append(paragraph.text)
-                extracted_text = "\n".join(text_content)
-            except Exception as e:
-                st.warning(f"⚠️ python-docx method failed: {e}")
-        
-        # Method 2: If the first method doesn't get enough content, try docx2txt
-        if (len(extracted_text.strip()) < 100) and DOCX2TXT_AVAILABLE:
-            try:
-                extracted_text = docx2txt.process(file_path)
-            except Exception as e:
-                st.warning(f"⚠️ docx2txt method failed: {e}")
-        
-        # If neither method worked well
-        if len(extracted_text.strip()) < 50:
-            st.error("❌ Could not extract sufficient text from DOCX file.")
-            st.info("💡 Try converting your file to PDF format for better compatibility.")
-            return None
-        
-        return extracted_text
-    except Exception as e:
-        st.error(f"❌ Error extracting text from DOCX: {str(e)}")
+def read_docx(file_path):
+    text = ""
+    
+    # Try python-docx first
+    if DOCX_OK:
+        try:
+            doc = Document(file_path)
+            text = "\n".join([p.text for p in doc.paragraphs])
+        except Exception as e:
+            st.warning(f"python-docx failed: {e}")
+    
+    # Fallback to docx2txt
+    if len(text.strip()) < 100 and DOCX2TXT_OK:
+        try:
+            text = docx2txt.process(file_path)
+        except Exception as e:
+            st.warning(f"docx2txt failed: {e}")
+    
+    if len(text.strip()) < 50:
+        st.error("Could not extract text from DOCX file")
         return None
+    
+    return text
 
 def extract_text_from_doc(file_path):
     """Extract text from DOC file"""
@@ -161,7 +145,7 @@ def extract_text_from_doc(file_path):
 
 def process_document_file(uploaded_file):
     """Process uploaded document file (PDF, DOCX, or DOC) and store in ChromaDB"""
-    chroma_client, vector_store, connected = initialize_chromadb()
+    chroma_client, vector_store, connected = get_db()
     
     if not connected:
         st.error("❌ Failed to connect to ChromaDB. Please start the server first.")
@@ -182,10 +166,10 @@ def process_document_file(uploaded_file):
         
         if file_extension == 'pdf':
             with st.spinner("📄 Extracting text from PDF..."):
-                extracted_text = extract_text_from_pdf(tmp_file_path)
+                extracted_text = read_pdf(tmp_file_path)
         elif file_extension == 'docx':
             with st.spinner("📄 Extracting text from DOCX..."):
-                extracted_text = extract_text_from_docx(tmp_file_path)
+                extracted_text = read_docx(tmp_file_path)
         elif file_extension == 'doc':
             with st.spinner("📄 Extracting text from DOC..."):
                 extracted_text = extract_text_from_doc(tmp_file_path)
@@ -416,7 +400,7 @@ def get_manual_job_description():
 
 def fetch_relevant_resume_content(job_description):
     """Fetch relevant resume content based on job description"""
-    chroma_client, vector_store, connected = initialize_chromadb()
+    chroma_client, vector_store, connected = get_db()
     
     if not connected:
         return None
@@ -435,7 +419,7 @@ def fetch_relevant_resume_content(job_description):
 
 def generate_cover_letter(resume_content, job_description):
     """Generate tailored cover letter using AI"""
-    chat = initialize_llm()
+    chat = get_llm()
     
     prompt = f"""
     You are a professional cover letter writer. Based on the candidate's resume content and the job description provided, 
@@ -497,7 +481,7 @@ def main_streamlit_app():
     # Sidebar for ChromaDB status
     with st.sidebar:
         st.header("🔧 System Status")
-        chroma_client, vector_store, connected = initialize_chromadb()
+        chroma_client, vector_store, connected = get_db()
         
         if connected:
             st.success("✅ ChromaDB Connected")
